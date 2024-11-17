@@ -1,7 +1,7 @@
 use starknet::ContractAddress;
 
 #[starknet::interface]
-trait IFactory<TContractState> {
+pub trait IFactory<TContractState> {
     fn fee_to(self: @TContractState) -> ContractAddress;
     fn fee_to_setter(self: @TContractState) -> ContractAddress;
     fn get_pair(
