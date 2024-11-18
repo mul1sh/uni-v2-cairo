@@ -16,14 +16,14 @@ mod Pair {
     use openzeppelin::token::erc20::interface::{
         IERC20Dispatcher, IERC20DispatcherTrait, IERC20Mixin
     };
+    use openzeppelin::access::ownable::OwnableComponent;
+    use openzeppelin::security::pausable::PausableComponent;
 
     use core::cmp::min;
     #[feature("corelib-internal-use")]
     use core::integer::u256_sqrt;
 
-
-    //init the components
-
+    // Components
     use openzeppelin::token::erc20::{ERC20Component, ERC20HooksEmptyImpl};
     use openzeppelin::security::reentrancyguard::ReentrancyGuardComponent;
     use ERC20Component::InternalTrait;
@@ -31,16 +31,20 @@ mod Pair {
     component!(
         path: ReentrancyGuardComponent, storage: reentrancy_guard, event: ReentrancyGuardEvent
     );
+    component!(path: OwnableComponent, storage: ownable, event: OwnableEvent);
+    component!(path: PausableComponent, storage: pausable, event: PausableEvent);
 
-
+    // Implement component interfaces
     #[abi(embed_v0)]
     impl ERC20MixinImpl = ERC20Component::ERC20MixinImpl<ContractState>;
     impl ERC20Internal = ERC20Component::InternalImpl<ContractState>;
     impl ReentrancyGuardInternal = ReentrancyGuardComponent::InternalImpl<ContractState>;
-
+    impl OwnableImpl = OwnableComponent::OwnableImpl<ContractState>;
+    impl OwnableInternalImpl = OwnableComponent::InternalImpl<ContractState>;
+    impl PausableImpl = PausableComponent::PausableImpl<ContractState>;
+    impl PausableInternalImpl = PausableComponent::InternalImpl<ContractState>;
 
     const MINIMUM_LIQUIDITY: u256 = 10_000;
-
 
     #[storage]
     struct Storage {
@@ -57,6 +61,10 @@ mod Pair {
         erc20: ERC20Component::Storage,
         #[substorage(v0)]
         reentrancy_guard: ReentrancyGuardComponent::Storage,
+        #[substorage(v0)]
+        ownable: OwnableComponent::Storage,
+        #[substorage(v0)]
+        pausable: PausableComponent::Storage,
     }
 
     #[event]
@@ -68,6 +76,8 @@ mod Pair {
         Burn: Burn,
         ERC20Event: ERC20Component::Event,
         ReentrancyGuardEvent: ReentrancyGuardComponent::Event,
+        OwnableEvent: OwnableComponent::Event,
+        PausableEvent: PausableComponent::Event,
     }
 
     #[derive(Drop, starknet::Event)]
@@ -113,13 +123,16 @@ mod Pair {
         pub const INVALID_TO: felt252 = 'Pair: Invalid to';
         pub const INSUFFICIENT_INPUT: felt252 = 'Pair: Insufficient input';
         pub const K: felt252 = 'Pair: K';
+        pub const NOT_OWNER: felt252 = 'Caller is not the owner';
     }
 
     #[constructor]
     fn constructor(ref self: ContractState) {
         let factory = get_caller_address();
-
         self._factory.write(factory);
+        
+        // Initialize owner as the factory
+        self.ownable.initializer(factory);
     }
 
     fn _uq_encode(y: u128) -> u256 {
@@ -187,6 +200,23 @@ mod Pair {
             }
             fee_on
         }
+    }
+
+    // Add pause/unpause functions that can only be called by owner
+    #[external(v0)]
+    fn pause(ref self: ContractState) {
+        // Check if caller is owner
+        self.ownable.assert_only_owner();
+        // Pause the contract
+        self.pausable.pause();
+    }
+
+    #[external(v0)]
+    fn unpause(ref self: ContractState) {
+        // Check if caller is owner
+        self.ownable.assert_only_owner();
+        // Unpause the contract
+        self.pausable.unpause();
     }
 
     #[abi(embed_v0)]
@@ -336,7 +366,10 @@ mod Pair {
         fn swap(
             ref self: ContractState, amount0_out: u256, amount1_out: u256, to: ContractAddress
         ) {
-            // lock the swap to prevent another call to swap as the swap is being executed
+            // Check if contract is paused
+            self.pausable.assert_not_paused();
+            
+            // Lock the swap to prevent another call to swap as the swap is being executed
             ReentrancyGuardInternal::start(ref self.reentrancy_guard);
 
             let this = get_contract_address();
@@ -358,12 +391,10 @@ mod Pair {
             );
 
             if amount0_out > 0 {
-                // optimistic transfer of token0 to user
                 token0.transfer(to, amount0_out);
             }
 
             if amount1_out > 0 {
-                // optimistic transfer of token1 to user
                 token1.transfer(to, amount1_out);
             }
 
@@ -412,8 +443,7 @@ mod Pair {
                 );
 
             ReentrancyGuardInternal::end(ref self.reentrancy_guard);
-        }
-
+        }   
         fn skim(ref self: ContractState, to: ContractAddress) {
             ReentrancyGuardInternal::start(ref self.reentrancy_guard);
 
