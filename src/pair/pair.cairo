@@ -26,7 +26,7 @@ mod Pair {
 
     use openzeppelin::token::erc20::{ERC20Component, ERC20HooksEmptyImpl};
     use openzeppelin::security::reentrancyguard::ReentrancyGuardComponent;
-    use ERC20Component::InternalTrait;
+
     component!(path: ERC20Component, storage: erc20, event: ERC20Event);
     component!(
         path: ReentrancyGuardComponent, storage: reentrancy_guard, event: ReentrancyGuardEvent
@@ -412,6 +412,7 @@ mod Pair {
                 );
 
             ReentrancyGuardInternal::end(ref self.reentrancy_guard);
+            self.reentrancy_guard.end();
         }
 
         fn skim(ref self: ContractState, to: ContractAddress) {
