@@ -132,14 +132,14 @@ mod Pair {
             // Only owner can pause
             self.ownable.assert_only_owner();
             self.pausable.assert_not_paused();
-            self.pausable._pause();
+            self.pausable.pause();
         }
 
         fn unpause(ref self: ContractState) {
             // Only owner can unpause
             self.ownable.assert_only_owner();
             self.pausable.assert_paused();
-            self.pausable._unpause();
+            self.pausable.unpause();
         }
     }
 
