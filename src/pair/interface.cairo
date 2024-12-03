@@ -3,6 +3,12 @@ use starknet::ContractAddress;
 use openzeppelin::token::erc20::interface::{IERC20Dispatcher};
 
 #[starknet::interface]
+pub trait IPausable<TContractState> {
+    fn pause(ref self: TContractState);
+    fn unpause(ref self: TContractState);
+}
+
+#[starknet::interface]
 pub trait IPair<TContractState> {
     fn initialize(ref self: TContractState, token0: ContractAddress, token1: ContractAddress);
 
