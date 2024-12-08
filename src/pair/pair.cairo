@@ -31,12 +31,16 @@ mod Pair {
     component!(
         path: ReentrancyGuardComponent, storage: reentrancy_guard, event: ReentrancyGuardEvent
     );
+    component!(
+        path: PausableComponent, storage: pausable_paused, event: PausableComponentEvent
+    );
 
 
     #[abi(embed_v0)]
     impl ERC20MixinImpl = ERC20Component::ERC20MixinImpl<ContractState>;
     impl ERC20Internal = ERC20Component::InternalImpl<ContractState>;
     impl ReentrancyGuardInternal = ReentrancyGuardComponent::InternalImpl<ContractState>;
+    impl PausableInternal= PausableComponent::InternalImpl<ContractState>;
 
 
     const MINIMUM_LIQUIDITY: u256 = 10_000;
@@ -57,6 +61,8 @@ mod Pair {
         erc20: ERC20Component::Storage,
         #[substorage(v0)]
         reentrancy_guard: ReentrancyGuardComponent::Storage,
+        #[substorage(v0)]
+        pausable_paused:PausableComponent::Storage,
     }
 
     #[event]
@@ -68,6 +74,7 @@ mod Pair {
         Burn: Burn,
         ERC20Event: ERC20Component::Event,
         ReentrancyGuardEvent: ReentrancyGuardComponent::Event,
+        PusableComponenr: PausableCompponent::Event,
     }
 
     #[derive(Drop, starknet::Event)]
@@ -234,6 +241,7 @@ mod Pair {
 
         fn mint(ref self: ContractState, to: ContractAddress) -> u256 {
             ReentrancyGuardInternal::start(ref self.reentrancy_guard);
+            
 
             let this = get_contract_address();
 
@@ -247,9 +255,7 @@ mod Pair {
             let amount1 = balance1 - reserve1.into();
 
             let fee_on = self._mint_fee(reserve0, reserve1);
-            let total_supply = self.erc20.total_supply();
-
-            let liquidity = if total_supply == 0 {
+               let liquidity = if total_supply == 0 {
                 let val = u256_sqrt(amount0 * amount1).into() - MINIMUM_LIQUIDITY;
                 self.erc20.mint(contract_address_const::<1>(), MINIMUM_LIQUIDITY);
                 val
@@ -338,7 +344,8 @@ mod Pair {
         ) {
             // lock the swap to prevent another call to swap as the swap is being executed
             ReentrancyGuardInternal::start(ref self.reentrancy_guard);
-
+            
+        
             let this = get_contract_address();
 
             let reserve0 = self._reserve0.read();
