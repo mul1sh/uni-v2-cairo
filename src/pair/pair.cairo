@@ -7,29 +7,35 @@ trait PairInternalTrait<TContractState> {
 
 #[starknet::contract]
 mod Pair {
-    use univ2::pair::interface::{IPair, IFactoryDispatcher, IFactoryDispatcherTrait};
-    use starknet::{
-        ContractAddress, get_caller_address, get_contract_address, get_block_timestamp,
-        contract_address_const
-    };
-    use starknet::storage::{StoragePointerReadAccess, StoragePointerWriteAccess,};
-    use openzeppelin::token::erc20::interface::{
-        IERC20Dispatcher, IERC20DispatcherTrait, IERC20Mixin
-    };
-
+    mod Pair {
+        use univ2::pair::interface::{IPair, IFactoryDispatcher, IFactoryDispatcherTrait};
+        use openzeppelin_access::ownable::OwnableComponent;
+        use openzeppelin_security::PausableComponent;
+        use starknet::{
+            ContractAddress, get_caller_address, get_contract_address, get_block_timestamp,
+            contract_address_const
     use core::cmp::min;
     #[feature("corelib-internal-use")]
     use core::integer::u256_sqrt;
 
 
-    //init the components
-
-    use openzeppelin::token::erc20::{ERC20Component, ERC20HooksEmptyImpl};
-    use openzeppelin::security::reentrancyguard::ReentrancyGuardComponent;
+     // Ownable Mixin
+     #[abi(embed_v0)]
+     impl OwnableMixinImpl = OwnableComponent::OwnableMixinImpl<ContractState>;
+     impl OwnableInternalImpl = OwnableComponent::InternalImpl<ContractState>;
+ 
+     // Pausable
+     #[abi(embed_v0)]
+     impl PausableImpl = PausableComponent::PausableImpl<ContractState>;
+     impl PausableInternalImpl = PausableComponent::InternalImpl<ContractState>;;
+    
 
     component!(path: ERC20Component, storage: erc20, event: ERC20Event);
     component!(
         path: ReentrancyGuardComponent, storage: reentrancy_guard, event: ReentrancyGuardEvent
+    );
+    component!(
+        path: PausableComponent, storage: pausable_paused, event: PausableComponentEvent
     );
 
 
@@ -37,6 +43,7 @@ mod Pair {
     impl ERC20MixinImpl = ERC20Component::ERC20MixinImpl<ContractState>;
     impl ERC20Internal = ERC20Component::InternalImpl<ContractState>;
     impl ReentrancyGuardInternal = ReentrancyGuardComponent::InternalImpl<ContractState>;
+    impl PausableInternal= PausableComponent::InternalImpl<ContractState>;
 
 
     const MINIMUM_LIQUIDITY: u256 = 10_000;
@@ -57,6 +64,8 @@ mod Pair {
         erc20: ERC20Component::Storage,
         #[substorage(v0)]
         reentrancy_guard: ReentrancyGuardComponent::Storage,
+        #[substorage(v0)]
+        pausable: PausableComponent::Storage
     }
 
     #[event]
@@ -68,6 +77,10 @@ mod Pair {
         Burn: Burn,
         ERC20Event: ERC20Component::Event,
         ReentrancyGuardEvent: ReentrancyGuardComponent::Event,
+         #[flat]
+        OwnableEvent: OwnableComponent::Event,
+        #[flat]
+        PausableEvent: PausableComponent::Event
     }
 
     #[derive(Drop, starknet::Event)]
@@ -115,12 +128,20 @@ mod Pair {
         pub const K: felt252 = 'Pair: K';
     }
 
-    #[constructor]
-    fn constructor(ref self: ContractState) {
-        let factory = get_caller_address();
 
-        self._factory.write(factory);
+    #[external(v0)]
+    fn pause(ref self: ContractState) {
+        self.ownable.assert_only_owner();
+        self.pausable.pause();
     }
+
+    #[external(v0)]
+    fn unpause(ref self: ContractState) {
+        self.ownable.assert_only_owner();
+        self.pausable.unpause();
+    }
+
+
 
     fn _uq_encode(y: u128) -> u256 {
         y.into() * 0x100000000000000000000000000000000_u256
@@ -234,6 +255,7 @@ mod Pair {
 
         fn mint(ref self: ContractState, to: ContractAddress) -> u256 {
             ReentrancyGuardInternal::start(ref self.reentrancy_guard);
+            
 
             let this = get_contract_address();
 
@@ -247,9 +269,7 @@ mod Pair {
             let amount1 = balance1 - reserve1.into();
 
             let fee_on = self._mint_fee(reserve0, reserve1);
-            let total_supply = self.erc20.total_supply();
-
-            let liquidity = if total_supply == 0 {
+               let liquidity = if total_supply == 0 {
                 let val = u256_sqrt(amount0 * amount1).into() - MINIMUM_LIQUIDITY;
                 self.erc20.mint(contract_address_const::<1>(), MINIMUM_LIQUIDITY);
                 val
@@ -338,7 +358,8 @@ mod Pair {
         ) {
             // lock the swap to prevent another call to swap as the swap is being executed
             ReentrancyGuardInternal::start(ref self.reentrancy_guard);
-
+            
+        
             let this = get_contract_address();
 
             let reserve0 = self._reserve0.read();
@@ -449,6 +470,8 @@ mod Pair {
                 );
 
             ReentrancyGuardInternal::end(ref self.reentrancy_guard);
+            ReentrancyGuardInternal::end(ref self.reentrancy_guard);
+        
         }
     }
 }
