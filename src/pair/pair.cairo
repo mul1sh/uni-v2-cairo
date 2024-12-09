@@ -7,25 +7,28 @@ trait PairInternalTrait<TContractState> {
 
 #[starknet::contract]
 mod Pair {
-    use univ2::pair::interface::{IPair, IFactoryDispatcher, IFactoryDispatcherTrait};
-    use starknet::{
-        ContractAddress, get_caller_address, get_contract_address, get_block_timestamp,
-        contract_address_const
-    };
-    use starknet::storage::{StoragePointerReadAccess, StoragePointerWriteAccess,};
-    use openzeppelin::token::erc20::interface::{
-        IERC20Dispatcher, IERC20DispatcherTrait, IERC20Mixin
-    };
-
+    mod Pair {
+        use univ2::pair::interface::{IPair, IFactoryDispatcher, IFactoryDispatcherTrait};
+        use openzeppelin_access::ownable::OwnableComponent;
+        use openzeppelin_security::PausableComponent;
+        use starknet::{
+            ContractAddress, get_caller_address, get_contract_address, get_block_timestamp,
+            contract_address_const
     use core::cmp::min;
     #[feature("corelib-internal-use")]
     use core::integer::u256_sqrt;
 
 
-    //init the components
-
-    use openzeppelin::token::erc20::{ERC20Component, ERC20HooksEmptyImpl};
-    use openzeppelin::security::reentrancyguard::ReentrancyGuardComponent;
+     // Ownable Mixin
+     #[abi(embed_v0)]
+     impl OwnableMixinImpl = OwnableComponent::OwnableMixinImpl<ContractState>;
+     impl OwnableInternalImpl = OwnableComponent::InternalImpl<ContractState>;
+ 
+     // Pausable
+     #[abi(embed_v0)]
+     impl PausableImpl = PausableComponent::PausableImpl<ContractState>;
+     impl PausableInternalImpl = PausableComponent::InternalImpl<ContractState>;;
+    
 
     component!(path: ERC20Component, storage: erc20, event: ERC20Event);
     component!(
@@ -62,7 +65,7 @@ mod Pair {
         #[substorage(v0)]
         reentrancy_guard: ReentrancyGuardComponent::Storage,
         #[substorage(v0)]
-        pausable_paused:PausableComponent::Storage,
+        pausable: PausableComponent::Storage
     }
 
     #[event]
@@ -74,7 +77,10 @@ mod Pair {
         Burn: Burn,
         ERC20Event: ERC20Component::Event,
         ReentrancyGuardEvent: ReentrancyGuardComponent::Event,
-        PusableComponenr: PausableCompponent::Event,
+         #[flat]
+        OwnableEvent: OwnableComponent::Event,
+        #[flat]
+        PausableEvent: PausableComponent::Event
     }
 
     #[derive(Drop, starknet::Event)]
@@ -122,12 +128,20 @@ mod Pair {
         pub const K: felt252 = 'Pair: K';
     }
 
-    #[constructor]
-    fn constructor(ref self: ContractState) {
-        let factory = get_caller_address();
 
-        self._factory.write(factory);
+    #[external(v0)]
+    fn pause(ref self: ContractState) {
+        self.ownable.assert_only_owner();
+        self.pausable.pause();
     }
+
+    #[external(v0)]
+    fn unpause(ref self: ContractState) {
+        self.ownable.assert_only_owner();
+        self.pausable.unpause();
+    }
+
+
 
     fn _uq_encode(y: u128) -> u256 {
         y.into() * 0x100000000000000000000000000000000_u256
@@ -456,6 +470,8 @@ mod Pair {
                 );
 
             ReentrancyGuardInternal::end(ref self.reentrancy_guard);
+            ReentrancyGuardInternal::end(ref self.reentrancy_guard);
+        
         }
     }
 }
